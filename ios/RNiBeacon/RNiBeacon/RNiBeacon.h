@@ -7,12 +7,8 @@
 //
 
 #import <Foundation/Foundation.h>
-
 #import <React/RCTBridgeModule.h>
-#import <React/RCTEventEmitter.h>
 
-@interface RNiBeacon : RCTEventEmitter <RCTBridgeModule>
-+ (RNiBeacon *)sharedInstance;
-+ (void)applicationWillTerminate:(UIApplication *)application;
-    
+@interface RNiBeacon : NSObject <RCTBridgeModule>
+
 @end
