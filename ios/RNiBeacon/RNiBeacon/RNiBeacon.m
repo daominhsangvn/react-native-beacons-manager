@@ -25,6 +25,19 @@ bool hasListeners = NO;
 @property (strong, nonatomic) ESSBeaconScanner *eddyStoneScanner;
 @property (assign, nonatomic) BOOL dropEmptyRanges;
 
+
+@property NSString *debugApiEndpoint;
+@property NSDate *lastApiSendDate;
+@property NSString *apiToken;
+@property NSString *beaconApiRequest;
+@property NSString *notiApi;
+@property NSString *notiTitle;
+@property NSString *notiContent;
+@property NSDictionary *MyRegion;
+@property NSString *uid;
+@property int notiDelay;
+@property int sendPeriod;
+
 @end
 
 @implementation RNiBeacon
@@ -53,9 +66,30 @@ RCT_EXPORT_MODULE()
 
     self.eddyStoneScanner = [[ESSBeaconScanner alloc] init];
     self.eddyStoneScanner.delegate = self;
+      
+
+    self.locationManager.allowsBackgroundLocationUpdates = YES;
+    self.locationManager.distanceFilter = 0.1; // meters
+    self.locationManager.activityType = CLActivityTypeAutomotiveNavigation;
+    self.locationManager.desiredAccuracy = kCLLocationAccuracyBest;
+    self.MyRegion = nil;
+    self.debugApiEndpoint = @"";
   }
 
   return self;
+}
+
++ (instancetype)sharedInstance
+{
+    static RNiBeacon *sharedInstance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sharedInstance = [[RNiBeacon alloc] init];
+        // Do any other initialisation stuff here
+        sharedInstance.sendPeriod = 60 * 1000;
+        sharedInstance.notiDelay = 30;
+    });
+    return sharedInstance;
 }
 
 - (NSArray<NSString *> *)supportedEvents
@@ -85,7 +119,7 @@ RCT_EXPORT_MODULE()
                                                                          minor:mi
                                                                     identifier:identifier];
 
-  NSLog(@"createBeaconRegion with: identifier - uuid - major - minor");
+  NSLog(@"[Beacon] createBeaconRegion with: identifier - uuid - major - minor");
   beaconRegion.notifyOnEntry = YES;
   beaconRegion.notifyOnExit = YES;
   beaconRegion.notifyEntryStateOnDisplay = YES;
@@ -105,7 +139,7 @@ RCT_EXPORT_MODULE()
                                                                          major:mj
                                                                     identifier:identifier];
 
-  NSLog(@"createBeaconRegion with: identifier - uuid - major");
+  NSLog(@"[Beacon] createBeaconRegion with: identifier - uuid - major");
   beaconRegion.notifyOnEntry = YES;
   beaconRegion.notifyOnExit = YES;
   beaconRegion.notifyEntryStateOnDisplay = YES;
@@ -121,7 +155,7 @@ RCT_EXPORT_MODULE()
   CLBeaconRegion *beaconRegion = [[CLBeaconRegion alloc] initWithProximityUUID:beaconUUID
                                                                     identifier:identifier];
 
-  NSLog(@"createBeaconRegion with: identifier - uuid");
+  NSLog(@"[Beacon] createBeaconRegion with: identifier - uuid");
   beaconRegion.notifyOnEntry = YES;
   beaconRegion.notifyOnExit = YES;
   beaconRegion.notifyEntryStateOnDisplay = YES;
@@ -220,7 +254,12 @@ RCT_EXPORT_METHOD(getMonitoredRegions:(RCTResponseSenderBlock)callback)
 
 RCT_EXPORT_METHOD(startMonitoringForRegion:(NSDictionary *) dict)
 {
+  [self.locationManager startMonitoringSignificantLocationChanges];
+  self.MyRegion = [dict copy];
   [self.locationManager startMonitoringForRegion:[self convertDictToBeaconRegion:dict]];
+  [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                     @"StartMonitoringForRegion", @"message",
+                     nil]];
 }
 
 RCT_EXPORT_METHOD(startRangingBeaconsInRegion:(NSDictionary *) dict)
@@ -230,11 +269,19 @@ RCT_EXPORT_METHOD(startRangingBeaconsInRegion:(NSDictionary *) dict)
   } else {
       [self.locationManager startRangingBeaconsInRegion:[self convertDictToBeaconRegion:dict]];
   }
+  [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                    @"StartRangingForRegion", @"message",
+                    nil]];
 }
 
 RCT_EXPORT_METHOD(stopMonitoringForRegion:(NSDictionary *) dict)
 {
+  [self.locationManager stopMonitoringSignificantLocationChanges];
+  self.MyRegion = nil;
   [self.locationManager stopMonitoringForRegion:[self convertDictToBeaconRegion:dict]];
+  [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                     @"StopMonitoringForRegion", @"message",
+                     nil]];
 }
 
 RCT_EXPORT_METHOD(stopRangingBeaconsInRegion:(NSDictionary *) dict)
@@ -244,6 +291,9 @@ RCT_EXPORT_METHOD(stopRangingBeaconsInRegion:(NSDictionary *) dict)
   } else {
     [self.locationManager stopRangingBeaconsInRegion:[self convertDictToBeaconRegion:dict]];
   }
+  [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                  @"StopRangingForRegion", @"message",
+                  nil]];
 }
 
 RCT_EXPORT_METHOD(requestStateForRegion:(NSDictionary *)dict)
@@ -268,6 +318,68 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
   self.dropEmptyRanges = drop;
 }
 
+RCT_EXPORT_METHOD(setDebugApi:(NSString *)debugApi)
+{
+    NSLog(@"[Beacon] setDebugApi: %@", debugApi);
+    self.debugApiEndpoint = [debugApi copy];
+}
+
+RCT_EXPORT_METHOD(setRequestToken:(NSString *)token)
+{
+    NSLog(@"[Beacon] setRequestToken: %@", token);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.apiToken = [token copy];
+}
+
+RCT_EXPORT_METHOD(setBeaconRequestApi:(NSString *)requestApi)
+{
+    NSLog(@"[Beacon] setBeaconRequestApi: %@", requestApi);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.beaconApiRequest = [requestApi copy];
+}
+
+RCT_EXPORT_METHOD(setNotificationRequestApi:(NSString *)notificationRequestApi)
+{
+    NSLog(@"[Beacon] setNotificationRequestApi: %@", notificationRequestApi);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.notiApi = [notificationRequestApi copy];
+}
+
+RCT_EXPORT_METHOD(setNotificationTitle:(NSString *)notificationTitle)
+{
+    NSLog(@"[Beacon] setNotificationTitle: %@", notificationTitle);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.notiTitle = [notificationTitle copy];
+}
+
+RCT_EXPORT_METHOD(setNotificationContent:(NSString *)notificationContent)
+{
+    NSLog(@"[Beacon] setNotificationContent: %@", notificationContent);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.notiContent = [notificationContent copy];
+}
+
+RCT_EXPORT_METHOD(setBeaconSendPeriod:(int)beaconSendPeriod)
+{
+    NSLog(@"[Beacon] setBeaconSendPeriod: %d", beaconSendPeriod);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.sendPeriod = beaconSendPeriod;
+}
+
+RCT_EXPORT_METHOD(setUserId:(NSString *)userId)
+{
+    NSLog(@"[Beacon] setUserId: %@", userId);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.uid = [userId copy];
+}
+
+RCT_EXPORT_METHOD(setNotificationDelay:(int)notificationDelay)
+{
+    NSLog(@"[Beacon] setNotificationDelay: %d", notificationDelay);
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    sharedInstance.notiDelay = notificationDelay;
+}
+
 -(NSString *)nameForAuthorizationStatus:(CLAuthorizationStatus)authorizationStatus
 {
   switch (authorizationStatus) {
@@ -288,6 +400,14 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
   }
 }
 
+- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations
+{
+    CLLocation *location = [locations lastObject];
+    [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                     @"didUpdateLocations", @"message",
+                     nil]];
+}
+
 -(void)locationManager:(CLLocationManager *)manager didChangeAuthorizationStatus:(CLAuthorizationStatus)status
 {
     NSString *statusName = [self nameForAuthorizationStatus:status];
@@ -298,15 +418,15 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
 
 -(void)locationManager:(CLLocationManager *)manager rangingBeaconsDidFailForRegion:(CLBeaconRegion *)region withError:(NSError *)error
 {
-  NSLog(@"Failed ranging region: %@", error);
+  NSLog(@"[Beacon] Failed ranging region: %@", error);
 }
 
 -(void)locationManager:(CLLocationManager *)manager monitoringDidFailForRegion:(CLRegion *)region withError:(NSError *)error {
-  NSLog(@"Failed monitoring region: %@", error);
+  NSLog(@"[Beacon] Failed monitoring region: %@", error);
 }
 
 -(void)locationManager:(CLLocationManager *)manager didFailWithError:(NSError *)error {
-  NSLog(@"Location manager failed: %@", error);
+  NSLog(@"[Beacon] Location manager failed: %@", error);
 }
 
 -(NSString *)stringForState:(CLRegionState)state {
@@ -326,6 +446,22 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
                           };
     if (self.bridge && hasListeners) {
       [self sendEventWithName:@"didDetermineState" body:event];
+    }
+    
+    [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                    @"didDetermineState", @"message",
+                    [self stringForState:state], @"state",
+                    nil]];
+    
+    switch (state) {
+        case CLRegionStateInside:
+            [self startRanging: self.MyRegion];
+            return;
+        case CLRegionStateOutside:
+            [self stopRanging: self.MyRegion];
+            return;
+        default:
+            return;
     }
 }
 
@@ -361,6 +497,22 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
     if (self.bridge && hasListeners) {
       [self sendEventWithName:@"beaconsDidRange" body:event];
     }
+    
+    [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                     @"didRangeBeacons", @"message",
+                     beaconArray, @"beacons",
+                     nil]];
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    if(self.lastApiSendDate != nil) {
+        NSTimeInterval seconds = [[NSDate date] timeIntervalSinceDate:self.lastApiSendDate];
+        if((seconds * 1000) > sharedInstance.sendPeriod) {
+            self.lastApiSendDate = [NSDate date];
+            [self sendBeacon:[beaconArray firstObject]];
+        }
+    } else {
+        self.lastApiSendDate = [NSDate date];
+        [self sendBeacon:[beaconArray firstObject]];
+    }
 }
 
 -(void)locationManager:(CLLocationManager *)manager
@@ -375,6 +527,10 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
   if (self.bridge && hasListeners) {
     [self sendEventWithName:@"regionDidEnter" body:event];
   }
+    
+  [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                    @"regionDidEnter", @"message",
+                    nil]];
 }
 
 -(void)locationManager:(CLLocationManager *)manager
@@ -389,6 +545,10 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
   if (self.bridge && hasListeners) {
     [self sendEventWithName:@"regionDidExit" body:event];
   }
+    
+  [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                    @"regionDidExit", @"message",
+                    nil]];
 }
 
 + (BOOL)requiresMainQueueSetup
@@ -462,6 +622,136 @@ RCT_EXPORT_METHOD(shouldDropEmptyRanges:(BOOL)drop)
     }
 
     return [NSString stringWithString:hexString];
+}
+
+-(void)startRanging: (NSDictionary *)dict {
+    if(dict != nil) {
+        if ([dict[@"identifier"] isEqualToString:kEddystoneRegionID]) {
+            [_eddyStoneScanner startScanning];
+        } else {
+            [self.locationManager startRangingBeaconsInRegion:[self convertDictToBeaconRegion:dict]];
+        }
+        [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                         @"StartRangingForRegion", @"message",
+                         nil]];
+    }
+}
+
+-(void)stopRanging: (NSDictionary *)dict {
+    if(dict != nil) {
+        if ([dict[@"identifier"] isEqualToString:kEddystoneRegionID]) {
+            [self.eddyStoneScanner stopScanning];
+        } else {
+            [self.locationManager stopRangingBeaconsInRegion:[self convertDictToBeaconRegion:dict]];
+        }
+        [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                         @"StopRangingForRegion", @"message",
+                         nil]];
+    }
+}
+
+-(void)sendDebug:(NSDictionary *) dict {
+    if(self.debugApiEndpoint && self.debugApiEndpoint.length != 0) {
+        NSString *requestUrl = self.debugApiEndpoint;
+        NSMutableDictionary *jsonData = [dict mutableCopy];
+        [jsonData setObject:@"ios" forKey:@"device"];
+
+        NSError* error;
+        NSData* data = [NSJSONSerialization dataWithJSONObject:jsonData options:0 error:&error];
+        NSString *dataString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        NSMutableURLRequest *request = [[NSMutableURLRequest alloc] init];
+        [request setHTTPMethod:@"POST"];
+        [request setURL:[NSURL URLWithString:requestUrl]];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+        [request setHTTPBody:[dataString dataUsingEncoding:NSUTF8StringEncoding]];
+        NSError *responseError;
+        NSURLResponse *response = nil;
+        NSData *responseData = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&responseError];
+    }
+}
+
+-(void)sendBeacon:(NSDictionary *) dict {
+
+    NSDictionary *jsonData = nil;
+
+    if(dict[@"uuid"] != nil) {
+        jsonData = [[NSDictionary alloc] initWithObjectsAndKeys:
+                    dict[@"uuid"],@"uuid",
+                    dict[@"major"],@"major",
+                    dict[@"minor"],@"minor",
+                    nil];
+    }
+
+    [self sendDebug:[[NSDictionary alloc] initWithObjectsAndKeys:
+                     @"SendBeacon", @"message",
+                     jsonData, @"Beacon",
+                     nil]];
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    if(sharedInstance.beaconApiRequest && sharedInstance.beaconApiRequest.length != 0 && sharedInstance.apiToken && sharedInstance.apiToken.length != 0) {
+        NSString *requestUrl = sharedInstance.beaconApiRequest;
+        NSError* error;
+        NSData* data = [NSJSONSerialization dataWithJSONObject:jsonData options:0 error:&error];
+        NSString *dataString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        NSMutableURLRequest *request = [[NSMutableURLRequest alloc] init];
+        [request setHTTPMethod:@"POST"];
+        [request setURL:[NSURL URLWithString:requestUrl]];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+        NSString *authorizationToken = [NSString stringWithFormat:@"%@", sharedInstance.apiToken];
+        [request setValue:authorizationToken forHTTPHeaderField:@"Authorization"];
+        [request setHTTPBody:[dataString dataUsingEncoding:NSUTF8StringEncoding]];
+        NSError *responseError;
+        NSURLResponse *response = nil;
+
+        NSData *responseData = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&responseError];
+        if (!error) {
+            NSLog(@"[Beacon] Send Beacon Response String : %@", [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding]);
+
+            id json = [NSJSONSerialization JSONObjectWithData:responseData options:0 error:nil];
+            NSLog(@"[Beacon] Send Beacon Parsed Data : %@", json);
+        }
+    }
+}
+
++ (void)applicationWillTerminate:(UIApplication *)application
+{
+    RNiBeacon *sharedInstance = [RNiBeacon sharedInstance];
+    if(sharedInstance.apiToken && sharedInstance.apiToken.length != 0 && sharedInstance.uid && sharedInstance.uid.length != 0 && sharedInstance.notiApi && sharedInstance.notiApi.length != 0 && sharedInstance.notiContent && sharedInstance.notiContent.length != 0 && sharedInstance.notiTitle && sharedInstance.notiTitle.length != 0) {
+        NSDictionary *jsonData = [[NSDictionary alloc] initWithObjectsAndKeys:
+                                  @"true", @"content_available",
+                                  sharedInstance.notiTitle, @"title",
+                                  sharedInstance.uid, @"userId",
+                                  sharedInstance.notiContent, @"message",
+                                  @(sharedInstance.notiDelay), @"delay",
+                                  nil];
+
+        NSError* error;
+        NSData* data = [NSJSONSerialization dataWithJSONObject:jsonData options:0 error:&error];
+        NSString *dataString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        NSMutableURLRequest *request = [[NSMutableURLRequest alloc] init];
+        [request setHTTPMethod:@"POST"];
+        [request setURL:[NSURL URLWithString:sharedInstance.notiApi]];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+        NSString *authorizationToken = [NSString stringWithFormat:@"%@", sharedInstance.apiToken];
+        [request setValue:authorizationToken forHTTPHeaderField:@"Authorization"];
+        [request setHTTPBody:[dataString dataUsingEncoding:NSUTF8StringEncoding]];
+
+        NSError *responseError;
+        NSURLResponse *response = nil;
+
+        sleep(2);
+
+        NSData *responseData = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&responseError];
+        if (!error) {
+            NSLog(@"[Beacon] Send Notification Response String : %@", [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding]);
+
+            id json = [NSJSONSerialization JSONObjectWithData:responseData options:0 error:nil];
+            NSLog(@"[Beacon] Send Notification  Parsed Data : %@", json);
+        }
+
+    }
 }
 
 @end
