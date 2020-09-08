@@ -70,4 +70,4 @@ public class BeaconRequest extends AsyncTask<JSONObject, Void, Void> {
         // dismiss progress dialog and update ui
     }
 
-}
+} 
