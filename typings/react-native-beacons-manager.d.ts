@@ -171,6 +171,8 @@ declare module 'react-native-beacons-manager' {
     setDebugApi(debugApi: string): void;
 
     setBeaconRequestApi(requestApi: string): void;
+
+    isStarted(): boolean;
   }
 
   const beacons: Beacons;

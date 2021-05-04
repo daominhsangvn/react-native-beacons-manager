@@ -13,6 +13,7 @@ import android.os.RemoteException;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
 
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -784,6 +785,12 @@ public class BeaconsAndroidModule extends ReactContextBaseJavaModule implements 
     }
   }
 
+  @ReactMethod
+  public void isStarted(final Callback resolve) {
+    boolean started =  this.mBeaconManager.getForegroundServiceNotificationId() != -1;
+    Log.d(LOG_TAG, "is beacon service started? " + Boolean.toString(started));
+    resolve.invoke(started);
+  }
 
   /***********************************************************************************************
    * Utils
@@ -850,7 +857,8 @@ public class BeaconsAndroidModule extends ReactContextBaseJavaModule implements 
   private Notification.Builder buildNotification() {
     Notification.Builder builder = new Notification.Builder(mApplicationContext);
     builder.setSmallIcon(mApplicationContext.getResources().getIdentifier("ic_notification", "mipmap", mApplicationContext.getPackageName()));
-    builder.setContentTitle("Ranging beacons...");
+    builder.setStyle(new Notification.BigTextStyle().setSummaryText("Ranging Beacons..."));
+
     Class intentClass = getMainActivityClass();
     Intent intent = new Intent(mApplicationContext, intentClass);
     PendingIntent pendingIntent = PendingIntent.getActivity(mApplicationContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -858,8 +866,8 @@ public class BeaconsAndroidModule extends ReactContextBaseJavaModule implements 
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       notificationChannel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
-        NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT);
-      notificationChannel.setDescription(NOTIFICATION_CHANNEL_DESCRIPTION);
+        NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_MIN);
+//      notificationChannel.setDescription(NOTIFICATION_CHANNEL_DESCRIPTION);
       mNotificationManager.createNotificationChannel(notificationChannel);
       builder.setChannelId(notificationChannel.getId());
     }
