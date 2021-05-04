@@ -1,0 +1,14 @@
+## How to dev the package
+- Clone the package: `$ git clone https://github.com/MacKentoch/react-native-beacons-manager` (Example dist: `C:\react-native-beacons-manager`)
+- Install package to you project: `$ yarn add  ..\react-native-beacons-manager` (Assumed your project is same root folder as the package)
+- Start sync from `node_modules/react-native-beacons-manager` to source folder
+  - Install `wml`: `$ npm install -g wml`
+  - Install Watchman:
+      - Windows: https://github.com/facebook/watchman/releases (Add to PATH and restart terminal)
+      - MacOS: `$ brew update && brew install watchman`
+  - Delete existing watches: `$ watchman watch-del-all`
+  - Activate `watchman` for `wml`: `$ watchman watch "C:\Program Files\nodejs\node_modules\wml\src"`
+      - (Windows) Find nodejs package location: `$ npm list -g --depth 0 | head -1` > You will see something like this `C:\Program Files\nodejs`
+      - (MacOS) Find nodejs location: `$ which node`
+  - Add link: `$ wml add <package to sync location> <dest package location>`
+  - Watch & Sync: `$ wml start`
